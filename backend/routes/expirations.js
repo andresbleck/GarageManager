@@ -13,14 +13,28 @@ function daysUntil(fechaVencimiento) {
   return Math.round((exp - today) / (1000 * 60 * 60 * 24));
 }
 
+// Mismo orden y umbrales que backend/services/notifications.js: el primero
+// cuyo umbral ya "aplica" (dias <= umbral) es el que debe notificarse en el
+// próximo chequeo, así que se deja en 0. Los umbrales más lejanos que ese ya
+// no tienen sentido notificarlos (por eso se marcan como ya notificados de
+// entrada), evitando además notificaciones en cascada los días siguientes.
+const NOTIFICATION_THRESHOLDS = [
+  { days: 0, field: 'notified_0' },
+  { days: 5, field: 'notified_5' },
+  { days: 15, field: 'notified_15' },
+  { days: 30, field: 'notified_30' },
+];
+
 function notificationFlagsForDate(fecha) {
   const d = daysUntil(fecha);
-  return {
-    notified_30: d < 30 ? 1 : 0,
-    notified_15: d < 15 ? 1 : 0,
-    notified_5: d < 5 ? 1 : 0,
-    notified_0: d < 0 ? 1 : 0,
-  };
+  const flags = { notified_0: 0, notified_5: 0, notified_15: 0, notified_30: 0 };
+  const applicableIndex = NOTIFICATION_THRESHOLDS.findIndex(t => d <= t.days);
+  if (applicableIndex !== -1) {
+    for (let i = applicableIndex + 1; i < NOTIFICATION_THRESHOLDS.length; i++) {
+      flags[NOTIFICATION_THRESHOLDS[i].field] = 1;
+    }
+  }
+  return flags;
 }
 
 async function verifyVehicleFamily(vehicleId, familyId) {
