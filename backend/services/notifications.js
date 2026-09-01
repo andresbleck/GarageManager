@@ -1,4 +1,3 @@
-const cron = require('node-cron');
 const sgMail = require('@sendgrid/mail');
 const { queryAll, queryRun } = require('../db/database');
 
@@ -129,11 +128,4 @@ async function checkAndSendNotifications() {
   }
 }
 
-function startNotificationCron() {
-  cron.schedule('0 9 * * *', checkAndSendNotifications, {
-    timezone: 'America/Argentina/Buenos_Aires',
-  });
-  console.log('[Notificaciones] Cron de recordatorios iniciado (09:00 AR diario)');
-}
-
-module.exports = { startNotificationCron, checkAndSendNotifications };
+module.exports = { checkAndSendNotifications };

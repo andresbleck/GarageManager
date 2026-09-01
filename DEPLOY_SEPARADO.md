@@ -43,6 +43,32 @@ En Environment Variables:
 Render construirá y deployará tu backend. La URL será algo como:
 `https://garage-manager-api.onrender.com`
 
+## ⏰ Recordatorios de vencimiento (cron externo)
+
+El plan gratuito de Render duerme el servicio tras ~15 minutos sin tráfico, así que un cron interno (`node-cron`) nunca dispararía de forma confiable a la hora programada si nadie visita el sitio en ese momento. Por eso el chequeo de vencimientos se dispara desde un **cron externo por HTTP**, no desde el proceso del backend.
+
+### Variables de Entorno adicionales en Render
+- `CRON_SECRET`: un valor secreto elegido por vos (ej. generado con `openssl rand -hex 32`). Protege el endpoint de notificaciones para que no lo pueda disparar cualquiera.
+
+### Configurar cron-job.org
+1. Crear una cuenta gratuita en https://cron-job.org
+2. Crear un nuevo cronjob:
+   - **URL**: `https://garage-manager-1.onrender.com/api/test-notifications`
+   - **Método**: `POST`
+   - **Header**: `x-cron-secret: <el mismo valor de CRON_SECRET>`
+   - **Horario**: todos los días a las `12:00 UTC` (≈ 09:00 en Argentina, UTC-3 todo el año, sin horario de verano)
+3. Guardar. La petición diaria despierta el backend (si estaba dormido) y ejecuta `checkAndSendNotifications()`.
+
+### Verificar
+```bash
+# Sin el header, debe devolver 401
+curl -X POST https://garage-manager-1.onrender.com/api/test-notifications
+
+# Con el header correcto, debe devolver 200 y ejecutar el chequeo
+curl -X POST -H "x-cron-secret: <tu-secreto>" https://garage-manager-1.onrender.com/api/test-notifications
+```
+Revisar los logs de Render para confirmar que `checkAndSendNotifications()` corrió.
+
 ## 📋 Paso 2: Deploy Frontend en Vercel
 
 ### 2.1 Preparar Frontend

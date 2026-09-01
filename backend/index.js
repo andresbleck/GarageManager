@@ -7,7 +7,7 @@ const expirationsRoutes = require('./routes/expirations');
 const repairsRoutes = require('./routes/repairs');
 const documentsRoutes = require('./routes/documents');
 const authRoutes = require('./routes/auth');
-const { startNotificationCron, checkAndSendNotifications } = require('./services/notifications');
+const { checkAndSendNotifications } = require('./services/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +26,10 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 app.post('/api/test-notifications', async (req, res) => {
+  const secret = req.headers['x-cron-secret'];
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
   try {
     await checkAndSendNotifications();
     res.json({ message: 'Chequeo de notificaciones ejecutado. Revisá los logs del servidor.' });
@@ -51,7 +55,6 @@ app.use((err, req, res, next) => {
 
 async function startServer() {
   await inicializarBaseDeDatos();
-  startNotificationCron();
   app.listen(PORT, () => {
     console.log(`Servidor GarageManager corriendo en puerto ${PORT}`);
     console.log(`API disponible en http://localhost:${PORT}`);
