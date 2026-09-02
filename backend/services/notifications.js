@@ -14,6 +14,15 @@ const TIPO_LABELS = {
   otro: 'Otro',
 };
 
+// "Hoy" en la zona horaria de Argentina (sin horario de verano, UTC-3 fijo),
+// no en UTC — si se calculara con UTC, entre las 21:00 y 23:59 hora
+// argentina ya sería "el día siguiente" para el servidor, haciendo que un
+// chequeo corrido de noche marque como "ya notificado hoy" un día que en
+// Argentina todavía no llegó.
+function todayInArgentina() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+}
+
 function daysUntil(fechaVencimiento) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -101,7 +110,7 @@ async function checkAndSendNotifications() {
 
     console.log(`[Notificaciones] Vencimientos vigentes encontrados: ${rows.length}`);
 
-    const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const todayStr = todayInArgentina(); // 'YYYY-MM-DD'
 
     for (const row of rows) {
       const days = daysUntil(row.fecha_vencimiento);
