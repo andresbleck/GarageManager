@@ -66,6 +66,7 @@ async function inicializarBaseDeDatos() {
     notified_15 INTEGER NOT NULL DEFAULT 0,
     notified_5 INTEGER NOT NULL DEFAULT 0,
     notified_0 INTEGER NOT NULL DEFAULT 0,
+    last_daily_reminder_date TEXT,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles (id) ON DELETE CASCADE
   )`);
 
@@ -103,6 +104,7 @@ async function inicializarBaseDeDatos() {
   await migrateColumn('expirations', 'notified_15', 'INTEGER NOT NULL DEFAULT 0');
   await migrateColumn('expirations', 'notified_5', 'INTEGER NOT NULL DEFAULT 0');
   await migrateColumn('expirations', 'notified_0', 'INTEGER NOT NULL DEFAULT 0');
+  await migrateColumn('expirations', 'last_daily_reminder_date', 'TEXT');
   await migrateColumn('repairs', 'tipo_personalizado', 'TEXT');
   await migrateExpirationsFK();
   await migrateRepairsFK();
@@ -180,10 +182,11 @@ async function initNotificationFlags() {
     );
     for (const row of rows) {
       const d = daysUntil(row.fecha_vencimiento);
-      await queryRun(
-        'UPDATE expirations SET notified_30 = ?, notified_15 = ?, notified_5 = ?, notified_0 = ? WHERE id = ?',
-        [d < 30 ? 1 : 0, d < 15 ? 1 : 0, d < 5 ? 1 : 0, d < 0 ? 1 : 0, row.id]
-      );
+      // A partir de los 15 días (inclusive vencido) los recordatorios pasan a
+      // ser diarios (ver backend/services/notifications.js), así que el aviso
+      // único de 30 días ya no aplica si el registro ya está dentro de esa
+      // ventana.
+      await queryRun('UPDATE expirations SET notified_30 = ? WHERE id = ?', [d <= 15 ? 1 : 0, row.id]);
     }
   } catch (e) {
     console.error('Error en initNotificationFlags:', e.message);

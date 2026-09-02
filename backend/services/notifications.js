@@ -1,12 +1,11 @@
 const sgMail = require('@sendgrid/mail');
 const { queryAll, queryRun } = require('../db/database');
 
-const THRESHOLDS = [
-  { days: 0,  field: 'notified_0' },
-  { days: 5,  field: 'notified_5' },
-  { days: 15, field: 'notified_15' },
-  { days: 30, field: 'notified_30' },
-];
+// A partir de esta cantidad de días (inclusive, y también ya vencido) se
+// manda un recordatorio TODOS los días hasta que el usuario regularice el
+// vencimiento. Antes de eso, solo hay un aviso único a los 30 días.
+const DAILY_REMINDER_WINDOW_DAYS = 15;
+const EARLY_WARNING_DAYS = 30;
 
 const TIPO_LABELS = {
   seguro: 'Seguro',
@@ -90,7 +89,7 @@ async function checkAndSendNotifications() {
     const rows = await queryAll(`
       SELECT
         e.id, e.tipo, e.tipo_personalizado, e.fecha_vencimiento,
-        e.notified_30, e.notified_15, e.notified_5, e.notified_0,
+        e.notified_30, e.last_daily_reminder_date,
         v.marca, v.modelo, v.patente,
         u.email, u.display_name
       FROM expirations e
@@ -102,6 +101,8 @@ async function checkAndSendNotifications() {
 
     console.log(`[Notificaciones] Vencimientos vigentes encontrados: ${rows.length}`);
 
+    const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
     for (const row of rows) {
       const days = daysUntil(row.fecha_vencimiento);
       const tipoLabel = row.tipo === 'otro'
@@ -109,18 +110,34 @@ async function checkAndSendNotifications() {
         : TIPO_LABELS[row.tipo];
       const vehiculo = `${row.marca} ${row.modelo} (${row.patente})`;
 
-      console.log(`[Notificaciones] ${tipoLabel} — ${vehiculo}: ${days}d | flags: 30=${row.notified_30} 15=${row.notified_15} 5=${row.notified_5} 0=${row.notified_0}`);
+      console.log(`[Notificaciones] ${tipoLabel} — ${vehiculo}: ${days}d | notified_30=${row.notified_30} last_daily=${row.last_daily_reminder_date}`);
 
-      const target = THRESHOLDS.find(t => days <= t.days && !row[t.field]);
-      if (!target) continue;
+      if (days <= DAILY_REMINDER_WINDOW_DAYS) {
+        // Zona de recordatorio diario: todos los días hasta que se regularice
+        // (o se cargue una fecha nueva que lo saque de esta ventana), como
+        // máximo una vez por día por si el chequeo corre más de una vez.
+        if (row.last_daily_reminder_date === todayStr) continue;
+        try {
+          await sendReminderEmail(row.email, row.display_name, {
+            tipoLabel, vehiculo, fechaVencimiento: row.fecha_vencimiento, days,
+          });
+          await queryRun('UPDATE expirations SET last_daily_reminder_date = ? WHERE id = ?', [todayStr, row.id]);
+        } catch (emailErr) {
+          console.error(`[Notificaciones] Error enviando a ${row.email}:`, emailErr.message);
+        }
+        continue;
+      }
 
-      try {
-        await sendReminderEmail(row.email, row.display_name, {
-          tipoLabel, vehiculo, fechaVencimiento: row.fecha_vencimiento, days,
-        });
-        await queryRun(`UPDATE expirations SET ${target.field} = 1 WHERE id = ?`, [row.id]);
-      } catch (emailErr) {
-        console.error(`[Notificaciones] Error enviando a ${row.email}:`, emailErr.message);
+      // Todavía no entró en la ventana de recordatorio diario: aviso único a los 30 días.
+      if (days <= EARLY_WARNING_DAYS && !row.notified_30) {
+        try {
+          await sendReminderEmail(row.email, row.display_name, {
+            tipoLabel, vehiculo, fechaVencimiento: row.fecha_vencimiento, days,
+          });
+          await queryRun('UPDATE expirations SET notified_30 = 1 WHERE id = ?', [row.id]);
+        } catch (emailErr) {
+          console.error(`[Notificaciones] Error enviando a ${row.email}:`, emailErr.message);
+        }
       }
     }
   } catch (err) {
